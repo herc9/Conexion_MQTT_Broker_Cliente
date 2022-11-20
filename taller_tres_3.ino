@@ -1,142 +1,200 @@
-#include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <DHT.h>
 
-//**************
-//**** MQTT CONFIG *****
-//**************
-const char *mqtt_server = "node02.myqtthub.com";
-const int mqtt_port = 1883;
-const char *mqtt_user = "32";
-const char *mqtt_pass = "32";
-const char *root_topic_subscribe = "Temperatura/esp32";
-const char *root_topic_publish = "Temperatura/public_esp32_02";
+const char* ssid = "Heraclio's Galaxy M32";
+const char* password = "Konectar";
+const char* mqttServer = "node02.myqtthub.com";
+const int mqttPort = 1883;
+const char* mqttUser = "heracliofuente25";
+const char* mqttPassword = "4lghMlp9-wHpehvqa";
 
-//**************
-//**** WIFICONFIG ******
-//**************
-const char *ssid = "UNISANGIL YOPAL";
-const char *password = "";
+int tempMax = 30;
+int dhtPort = 8;
+int ventiladorPort = 2;
+int ledAmarilloPort = 0;
+int ledverdePort = 0;
+int ledRojoPort = 0;
+int ledCalefaccionPort = 0;
+int puertaPort = 0;
 
-//**************
-//**** GLOBALES   ******
-//**************
+
+const char* TOPIC_HUMEDAD = "casa/humedad";
+const char* TOPIC_PUERTA = "casa/puerta";
+const char* TOPIC_TEMPERATURA = "casa/temperatura";
+const char* TOPIC_TEMPERATURA_MAX = "casa/temperatura-max";
+
+void callback(char* topic, byte* payload, unsigned int length);
+
 WiFiClient espClient;
 PubSubClient client(espClient);
-char msg[25];
-long count = 0;
 
-//********
-//* F U N C I O N E S **
-//********
-void callback(char *topic, byte *payload, unsigned int length); // METODO ENCARGADO DE RECIBIR DATOS
-void reconnect();                                               // conectar al broker
-void setup_wifi();                                              // conectar al wifi
-
-void setup()
-{
-  Serial.begin(115200); // configurar el chip en consola para que funcione a esta velocidad
-  setup_wifi();
-  client.setServer(mqtt_server, mqtt_port); //
-  client.setCallback(callback);
-}
-
-void loop()
-{
-
-  if (!client.connected())
-  {
-    reconnect();
-  }
-
-  if (client.connected())
-  {
-    String str = "La cuenta es -> " + String(count);
-    str.toCharArray(msg, 25);
-    client.publish(root_topic_publish, msg);
-    count++;
-    Serial.println(msg);
-    delay(10000); // tiempo para envio de mensaje (cada 10 segundos (10.000 milisegundos))
-  }
-  client.loop();
-}
-
-//***********
-//*    CONEXION WIFI      *
-//***********
-void setup_wifi()
-{
-  delay(5000);
-  // Nos conectamos a nuestra red Wifi
-  Serial.println();
-  Serial.print("Conectando a ssid: ");
-  Serial.println(ssid);
-
+void setup() {
+  Serial.begin(115200);
   WiFi.begin(ssid, password);
+  Serial.println("...................................");
 
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  Serial.print("Connecting to WiFi.");
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
+  Serial.println("Connected to the WiFi network");
+  client.setServer(mqttServer, mqttPort);
+  client.setCallback(callback);
 
-  Serial.println("");
-  Serial.println("Conectado a red WiFi!");
-  Serial.println("Dirección IP: ");
-  Serial.println(WiFi.localIP());
-}
+  // Inicia Sensor Temperatura
+  dht.begin();
 
-//***********
-//*    CONEXION MQTT      *
-//***********
+  while (!client.connected()) {
+    Serial.println("Connecting to MQTT...");
+    if (client.connect("ESP32Client", mqttUser, mqttPassword)) {
+      Serial.println("connected");
 
-void reconnect()
-{
+      connectTopics();
 
-  while (!client.connected())
-  {
-    Serial.print("Intentando conexión Broker...");
-    // Creamos un cliente ID
-    String clientId = "ESP_32_02"; // este es el nombre que  se debe dejar en el broker
-
-    // Intentamos conectar
-    if (client.connect(clientId.c_str(), mqtt_user, mqtt_pass))
-    {
-      Serial.println("Conectado al broker!");
-      // Nos suscribimos
-      if (client.subscribe(root_topic_subscribe))
-      {
-        Serial.println("Suscripcion a topic " + String(root_topic_subscribe));
-      }
-      else
-      {
-        Serial.println("fallo Suscripciión a topic " + String(root_topic_subscribe));
-      }
-    }
-    else
-    {
-      Serial.print("falló conexión broker:( con error -> ");
+    } else {
+      Serial.print("failed with state ");
       Serial.print(client.state());
-      Serial.println(" Intentamos de nuevo en 5 segundos");
-      delay(5000);
+      delay(2000);
     }
   }
 }
 
-//***********
-//*       CALLBACK        *
-//***********
 
-void callback(char *topic, byte *payload, unsigned int length)
-{
+
+void connectTopics() {
+  // Nos suscribimos
+  if (client.subscribe(TOPIC_TEMPERATURA)) {
+    Serial.println("Suscripcion a topic " + String(TOPIC_TEMPERATURA));
+  } else {
+    Serial.println("fallo Suscripciión a topic " + String(TOPIC_TEMPERATURA));
+  }
+
+  if (client.subscribe(TOPIC_TEMPERATURA_MAX)) {
+    Serial.println("Suscripcion a topic " + String(TOPIC_TEMPERATURA_MAX));
+  } else {
+    Serial.println("fallo Suscripciión a topic " + String(TOPIC_TEMPERATURA_MAX));
+  }
+
+  if (client.subscribe(TOPIC_HUMEDAD)) {
+    Serial.println("Suscripcion a topic " + String(TOPIC_HUMEDAD));
+  } else {
+    Serial.println("fallo Suscripciión a topic " + String(TOPIC_HUMEDAD));
+  }
+
+  if (client.subscribe(TOPIC_PUERTA)) {
+    Serial.println("Suscripcion a topic " + String(TOPIC_PUERTA));
+  } else {
+    Serial.println("fallo Suscripciión a topic " + String(TOPIC_PUERTA));
+  }
+}
+
+void indicadoresLed(String temp) {
+  int tempInt = temp.toInt();
+  int rango = 2;
+
+  if (tempInt >= tempMax - rango && tempInt < tempMax) {
+    digitalWrite(ledverdePort, HIGH);
+    digitalWrite(ledRojoPort, LOW);
+    digitalWrite(ledAmarilloPort, LOW);
+    //    Apagamos Calefacción
+    digitalWrite(ledCalefaccionPort, LOW);
+  }
+  if (tempInt < tempMax - rango) {
+    digitalWrite(ledAmarilloPort, HIGH);
+    digitalWrite(ledverdePort, LOW);
+    digitalWrite(ledRojoPort, LOW);
+
+    //    Encendemos Calefacción
+    digitalWrite(ledCalefaccionPort, HIGH);
+  }
+
+  if (tempInt = > tempMax) {
+    digitalWrite(ledRojoPort, HIGH);
+    digitalWrite(ledverdePort, LOW);
+    digitalWrite(ledAmarilloPort, LOW);
+  }
+}
+
+void getTemperature() {
+  float humedad = dht.readHumidity();
+  float temp = dht.readTemperature();
+  Serial.print("Temperatura: ");
+  Serial.print(temp);
+  Serial.print("ºC Humedad: ");
+  Serial.print(humedad);
+  Serial.println("%");
+  delay(1000);
+
+  // Comprobamos si ha habido algún error en la lectura
+  if (isnan(humedad) || isnan(temp)) {
+    Serial.println("Error obteniendo los datos del sensor DHT11");
+    return;
+  } else {
+
+    // Encender/Apagar LEDs
+    indicadoresLed(String(temp));
+
+    // Enviar la temp al MQTT
+    sendTemperature(String(temp), String(humedad));
+  }
+
+  if (temp >= tempMax) {
+    // Encender ventilador
+    digitalWrite(ventiladorPort, HIGH);
+  } else {
+    // Apagar Ventilador
+    digitalWrite(ventiladorPort, LOW);
+  }
+
+  getMaxTemp();
+}
+
+
+void sendTemperature(String temp, String hum) {
+  client.publish(TOPIC_HUMEDAD, hum);
+  client.publish(TOPIC_TEMPERATURA, temp);
+}
+
+
+void callback(char* topic, byte* payload, unsigned int length) {
   String incoming = "";
   Serial.print("Mensaje recibido desde -> ");
   Serial.print(topic);
+
   Serial.println("");
-  for (int i = 0; i < length; i++)
-  {
+  for (int i = 0; i < length; i++) {
     incoming += (char)payload[i];
   }
   incoming.trim();
   Serial.println("Mensaje -> " + incoming);
+
+  // Temp Max
+  if (topic == TOPIC_TEMPERATURA_MAX) {
+    tempMax = incoming.toInt();
+  }
+
+  // Puerta!!!
+  if (topic == TOPIC_PUERTA) {
+    if (incoming == 'open') {
+      Serial.println('Se Abrió la puerta.');
+      digitalWrite(puertaPort, HIGH);
+      delay(1000);
+      digitalWrite(puertaPort, LOW);
+    }
+    if (incoming == 'close') {
+      digitalWrite(puertaPort, HIGH);
+      delay(1000);
+      digitalWrite(puertaPort, LOW);
+      client.publish(TOPIC_PUERTA, 'closed');
+      Serial.println('Se Cerró la puerta.');
+    }
+  }
+}
+
+void loop() {
+  getTemperature();
+  client.loop();
+  delay(500);
 }
